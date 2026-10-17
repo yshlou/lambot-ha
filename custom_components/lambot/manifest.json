@@ -1,0 +1,10 @@
+{
+  "domain": "lambot",
+  "name": "Lambot 岚豹扫地机",
+  "config_flow": true,
+  "dependencies": [],
+  "iot_class": "local_polling",
+  "requirements": ["paho-mqtt>=1.6.0"],
+  "version": "3.2.0",
+  "issue_tracker": "https://github.com/yshlou/lambot-ha/issues"
+}
