@@ -67,10 +67,19 @@ class LambotData:
         elif f == 19 and isinstance(p, dict):
             self.track = p
         elif f in (7, 17, 66) and isinstance(p, dict):
-            # 地图解码（RLE）尚未完全破解：数据为多层结构，像素流仅占前段，
-            # 直接渲染会产生错位乱码。暂不更新 map_png，仅保留尺寸信息供研究。
+            # SLAM 地图（格式已破解：自适应转义 RLE，见 map_utils.py）
             self.map_dimensions = (int(p.get("dimension_x", 0)), int(p.get("dimension_y", 0)))
             self.map_resolution = p.get("resolution")
+            from .map_utils import decode_map_payload
+            try:
+                result = decode_map_payload(p)
+                if result:
+                    png, dx, dy = result
+                    self.map_png = png
+                    self.map_dimensions = (dx, dy)
+                    self.map_updated = time.time()
+            except Exception:
+                pass
         elif f == 28:
             self.rooms = p
         elif f == 32 and isinstance(p, dict):
