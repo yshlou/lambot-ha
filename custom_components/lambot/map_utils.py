@@ -1,4 +1,8 @@
-﻿"""SLAM 地图 RLE 解码与 PNG 渲染。"""
+"""SLAM 地图 RLE 解码与 PNG 渲染。
+
+注意：RLE 格式尚未完全破解（数据为多层结构，像素流仅占前段），
+decode_map_payload 暂未被调用，保留供后续研究使用。
+"""
 from __future__ import annotations
 
 import base64
@@ -7,7 +11,7 @@ import zlib
 
 
 def decode_rle(raw: bytes, dim_x: int, dim_y: int) -> list[int]:
-    """解码 SLAMTEC RLE 地图。
+    """解码 SLAMTEC RLE 地图（当前实现为实验性，格式待确认）。
 
     格式：魔数 "RLE" + 头部 + 像素流；
     像素流：高 bit(0x80) 标记 run（值=b&0x7f，后跟长度-1），否则单字节像素。
