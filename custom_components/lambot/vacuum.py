@@ -54,9 +54,12 @@ _STATE_MAP = {
 STATE_DOCKED = "docked"
 STATE_IDLE = "idle"
 
-# 清扫/回充类瞬时状态码：设备静默后属于残留值，按待机兜底
+# 清扫/回充类瞬时状态码：设备长时间静默后属于残留值，按待机兜底
 # （7/15 挂起类保留 paused 显示，不在兜底之列）
 _STALE_PRONE_STATES = (4, 5, 6, 14)
+# 状态残留判定阈值（秒）：设备超过该时长无任何上报，清扫/回充类状态码才视为残留
+# （设备活跃上报期间，6/5 等状态必须正常映射为清扫中/回充中）
+_STALE_AFTER_SECONDS = 600
 
 # 推断状态最长可信时长（秒）
 _INFERRED_TTL_SECONDS = 600
@@ -139,8 +142,13 @@ class LambotVacuum(StateVacuumEntity):
         if inferred_fresh:
             return _INFERRED_MAP.get(data.inferred_state, STATE_IDLE)
         if data.state is not None:
-            if data.state in _STALE_PRONE_STATES:
-                # 清扫/回充类状态码在推断过期后属于残留值（设备静默），按待机兜底
+            if (
+                data.state in _STALE_PRONE_STATES
+                and data.update_time
+                and (time.time() - data.update_time) > _STALE_AFTER_SECONDS
+            ):
+                # 设备静默超过阈值后，清扫/回充类状态码属于残留值，按待机兜底；
+                # 设备活跃上报期间必须正常映射（6=清扫中、5=回充中）
                 return STATE_IDLE
             return _STATE_MAP.get(data.state, STATE_IDLE)
         if data.battery is not None and data.battery >= 99:
