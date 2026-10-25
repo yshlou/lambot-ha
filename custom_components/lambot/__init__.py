@@ -10,6 +10,7 @@ import logging
 import threading
 import uuid
 from datetime import timedelta
+from typing import Any
 
 import paho.mqtt.client as mqtt
 
@@ -209,7 +210,7 @@ class LambotCoordinator:
         if self._mqtt is not None:
             self._mqtt.publish(topic, payload)
 
-    def send_command(self, f: int, p: dict | None = None) -> None:
+    def send_command(self, f: int, p: Any | None = None) -> None:
         """向扫地机下发控制指令（本地通道）。
 
         扫地机对未在近期握手的客户端会忽略控制指令，因此先重新握手再发送。

@@ -21,9 +21,9 @@ class LambotData:
     map_updated: float = 0.0
     rooms: Any | None = None
     device_mode: Any | None = None
+    clean_mode: int | None = None
     mop_mode: Any | None = None
     update_time: float = 0.0
-    _last_sweep_time: int | None = None
     _last_battery: int | None = None
     inferred_state: str | None = None
     inferred_at: float = 0.0
@@ -39,6 +39,12 @@ class LambotData:
         if f == 16 and isinstance(p, int):
             self.state = p
             self._set_inferred(None)
+        elif f == 22 and isinstance(p, int):
+            # 协议实测（docs/PROTOCOL.md v1.3）：f22 上行是状态事件镜像（与 f16
+            # 同值推送），并非清扫时长。与 f16 同样处理：更新 state、清除推断。
+            # 旧版"时长增长推断"基于误读，是状态显示冻结的根源，已移除。
+            self.state = p
+            self._set_inferred(None)
         elif f == 3 and isinstance(p, int):
             self.battery = p
             if self._last_battery is not None and p > self._last_battery and p < 100:
@@ -48,24 +54,6 @@ class LambotData:
             self._last_battery = p
         elif f == 20 and isinstance(p, (int, float)):
             self.sweep_area = float(p)
-        elif f == 22 and isinstance(p, int):
-            self.sweep_time = p
-            if self._last_sweep_time is not None and p > self._last_sweep_time:
-                # 清扫时长增长 = 刚结束一轮清扫；state 仍由 f=16 驱动，这里只做推断
-                if self.battery is not None and self._last_battery is not None:
-                    if self.battery > self._last_battery:
-                        self._set_inferred("回充中")
-                    elif self.battery < self._last_battery:
-                        self._set_inferred("清扫中")
-                    else:
-                        self._set_inferred("工作中")
-                else:
-                    self._set_inferred("工作中")
-            elif self._last_sweep_time is not None and p == self._last_sweep_time and p > 0:
-                self._set_inferred("暂停/待机")
-            elif p == 0:
-                self._set_inferred(None)
-            self._last_sweep_time = p
         elif f == 1 and isinstance(p, dict):
             self.pose = p
         elif f == 2:
@@ -90,6 +78,9 @@ class LambotData:
             self.rooms = p
         elif f == 32 and isinstance(p, dict):
             self.device_mode = p
+        elif f == 54 and isinstance(p, int):
+            # 协议实测：f54 仅上行（当前清扫模式：0=沿边 1=默认 2=弓形），供回显
+            self.clean_mode = p
         elif f == 101 and isinstance(p, dict):
             self.mop_mode = p
 

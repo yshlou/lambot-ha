@@ -1,8 +1,16 @@
 """Lambot 扫地机 vacuum 平台（标准 VacuumEntity）。
 
+v5: 按协议实测（docs/PROTOCOL.md v1.3）校准——
+  - 模式设置改用 f78 裸标量（旧 f54 下发无效，54 实为上行方向的模式上报）；
+  - 模式码修正：0=沿边、2=弓形（旧映射沿边=3 有误）；区域清扫无独立模式码，
+    仅更新本地显示（指定区域清扫是独立指令，暂不启用）；
+  - f16 状态映射按实测修正：5=回充中、7=清扫挂起/暂停（旧映射颠倒），
+    补充 0/2/9/14/15；清扫/回充类残留（4/5/6/14）静默后按待机兜底；
+  - 暂停跟随官方带参 f24 p=1；
+  - f22 上行实为状态事件镜像（非清扫时长），models 已同码处理，"清扫时长"
+    属性因无真实数据源不再展示。
 v4: 状态推断带时间戳（models.LambotData.inferred_at）——设备休眠后停止上报，
-推断状态 10 分钟后过期；f=16 清扫类残留状态码（4/6）在推断过期后按待机兜底，
-避免状态永久卡死在"回充中"。清扫中的实时显示由 f=22 时长增长的推断驱动。
+推断状态 10 分钟后过期，避免状态永久卡死。
 v3: 用 fan_speed（HA 2026.9 的正确 API：FAN_SPEED/fan_speed/fan_speeds）承载清扫模式。
 """
 from __future__ import annotations
@@ -25,29 +33,30 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# 本地控制指令（功能码，同 button.py）
+# 本地控制指令（功能码）
 CMD_START_SWEEP = 26
 CMD_PAUSE = 24
 CMD_RETURN_HOME = 25
-CMD_SET_MODE = 54
+CMD_SET_MODE = 78  # v5 修正：78=设置清扫模式（裸标量 p）；54 是上行方向的模式上报，下发无效
 
-# f=16 设备状态码 → HA vacuum 状态
+# f=16 设备状态码 → HA vacuum 状态（协议实测校准，见 docs/PROTOCOL.md v1.3）
 _STATE_MAP = {
-    1: "docked",      # 待机/充电
-    2: "returning",   # 回充中
-    3: "docked",      # 充电完成
-    4: "cleaning",    # 清扫中
-    5: "paused",      # 暂停
+    0: "idle",        # 遥控模式待机
+    1: "docked",      # 待机/在充电座上（落座过渡）
+    2: "docked",      # 在座充电/充电完成
+    5: "returning",   # 回充对接/返航中
     6: "cleaning",    # 清扫中
-    7: "returning",   # 回充中
-    8: "error",       # 异常
-    9: "idle",        # 待机
+    7: "paused",      # 清扫挂起/暂停（静止待命，不移动不返航）
+    9: "idle",        # 遥控旋转执行中（瞬时动作）
+    14: "cleaning",   # 区域清扫中
+    15: "paused",     # 区域清扫暂停
 }
 STATE_DOCKED = "docked"
 STATE_IDLE = "idle"
 
-# 清扫/回充类状态码：设备静默后属于残留值，按待机兜底
-_STALE_PRONE_STATES = (4, 6)
+# 清扫/回充类瞬时状态码：设备静默后属于残留值，按待机兜底
+# （7/15 挂起类保留 paused 显示，不在兜底之列）
+_STALE_PRONE_STATES = (4, 5, 6, 14)
 
 # 推断状态最长可信时长（秒）
 _INFERRED_TTL_SECONDS = 600
@@ -60,10 +69,11 @@ _INFERRED_MAP = {
     "暂停/待机": "paused",
 }
 
-# 清扫模式枚举（2=弓形 / 3=沿边 / 9=区域）
+# 清扫模式：文本 ↔ 设备码（f78 裸标量；0=沿边、1=默认、2=弓形，实测见 docs/PROTOCOL.md）
 FAN_SPEEDS = ["弓形清扫", "沿边清扫", "区域清扫"]
-_MODE_TO_CODE = {"弓形清扫": 2, "沿边清扫": 3, "区域清扫": 9}
-_MODE_FROM_CODE = {2: "弓形清扫", 3: "沿边清扫", 9: "区域清扫"}
+_MODE_TO_CODE = {"弓形清扫": 2, "沿边清扫": 0, "区域清扫": None}
+# 区域清扫无独立模式码（走指定区域清扫指令，暂不启用），仅更新本地显示
+_MODE_FROM_CODE = {0: "沿边清扫", 2: "弓形清扫"}
 
 
 async def async_setup_entry(
@@ -102,11 +112,10 @@ class LambotVacuum(StateVacuumEntity):
 
     @callback
     def _update_callback(self) -> None:
-        dm = self.coordinator.data.device_mode
-        if isinstance(dm, dict):
-            mode_val = dm.get("mode") or dm.get("clean_mode")
-            if isinstance(mode_val, int) and mode_val in _MODE_FROM_CODE:
-                self._fan_speed = _MODE_FROM_CODE[mode_val]
+        # f54 上行=当前清扫模式（0=沿边 1=默认 2=弓形），用于回显
+        cm = self.coordinator.data.clean_mode
+        if isinstance(cm, int) and cm in _MODE_FROM_CODE:
+            self._fan_speed = _MODE_FROM_CODE[cm]
         self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:
@@ -131,7 +140,7 @@ class LambotVacuum(StateVacuumEntity):
             return _INFERRED_MAP.get(data.inferred_state, STATE_IDLE)
         if data.state is not None:
             if data.state in _STALE_PRONE_STATES:
-                # 清扫类状态码在推断过期后属于残留值（设备静默），按待机兜底
+                # 清扫/回充类状态码在推断过期后属于残留值（设备静默），按待机兜底
                 return STATE_IDLE
             return _STATE_MAP.get(data.state, STATE_IDLE)
         if data.battery is not None and data.battery >= 99:
@@ -169,17 +178,19 @@ class LambotVacuum(StateVacuumEntity):
         self.coordinator.send_command(CMD_START_SWEEP)
 
     async def async_pause(self) -> None:
-        self.coordinator.send_command(CMD_PAUSE)
+        self.coordinator.send_command(CMD_PAUSE, 1)  # 官方带参 p=1
 
     async def async_stop(self) -> None:
-        self.coordinator.send_command(CMD_PAUSE)
+        self.coordinator.send_command(CMD_PAUSE, 1)
 
     async def async_return_to_base(self) -> None:
         self.coordinator.send_command(CMD_RETURN_HOME)
 
     async def async_set_fan_speed(self, fan_speed: str) -> None:
-        """切换清扫模式。"""
+        """切换清扫模式（f78 裸标量下发；区域清扫无独立模式码，仅更新显示）。"""
         if fan_speed in FAN_SPEEDS:
             self._fan_speed = fan_speed
-            self.coordinator.send_command(CMD_SET_MODE, {"mode": _MODE_TO_CODE[fan_speed]})
+            code = _MODE_TO_CODE[fan_speed]
+            if code is not None:
+                self.coordinator.send_command(CMD_SET_MODE, code)
             self.async_write_ha_state()
