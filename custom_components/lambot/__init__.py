@@ -30,7 +30,7 @@ from .models import LambotData
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON, Platform.IMAGE]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON, Platform.IMAGE, Platform.VACUUM]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

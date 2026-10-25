@@ -26,39 +26,45 @@ class LambotData:
     _last_sweep_time: int | None = None
     _last_battery: int | None = None
     inferred_state: str | None = None
+    inferred_at: float = 0.0
     _listeners: list[Callable[[], None]] = field(default_factory=list)
+
+    def _set_inferred(self, value: str | None) -> None:
+        """记录推断状态及其产生时间（供 vacuum 平台做过期判断）。"""
+        self.inferred_state = value
+        self.inferred_at = time.time() if value else 0.0
 
     def update(self, f: int | None, p: Any) -> None:
         self.update_time = time.time()
         if f == 16 and isinstance(p, int):
             self.state = p
-            self.inferred_state = None
+            self._set_inferred(None)
         elif f == 3 and isinstance(p, int):
             self.battery = p
             if self._last_battery is not None and p > self._last_battery and p < 100:
-                self.inferred_state = "充电中"
+                self._set_inferred("充电中")
             elif p >= 100:
-                self.inferred_state = None
+                self._set_inferred(None)
             self._last_battery = p
         elif f == 20 and isinstance(p, (int, float)):
             self.sweep_area = float(p)
         elif f == 22 and isinstance(p, int):
             self.sweep_time = p
             if self._last_sweep_time is not None and p > self._last_sweep_time:
-                self.state = 6
+                # 清扫时长增长 = 刚结束一轮清扫；state 仍由 f=16 驱动，这里只做推断
                 if self.battery is not None and self._last_battery is not None:
                     if self.battery > self._last_battery:
-                        self.inferred_state = "回充中"
+                        self._set_inferred("回充中")
                     elif self.battery < self._last_battery:
-                        self.inferred_state = "清扫中"
+                        self._set_inferred("清扫中")
                     else:
-                        self.inferred_state = "工作中"
+                        self._set_inferred("工作中")
                 else:
-                    self.inferred_state = "工作中"
+                    self._set_inferred("工作中")
             elif self._last_sweep_time is not None and p == self._last_sweep_time and p > 0:
-                self.inferred_state = "暂停/待机"
+                self._set_inferred("暂停/待机")
             elif p == 0:
-                self.inferred_state = None
+                self._set_inferred(None)
             self._last_sweep_time = p
         elif f == 1 and isinstance(p, dict):
             self.pose = p

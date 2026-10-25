@@ -19,11 +19,11 @@ from .const import (
 
 SCHEMA = Schema(
     {
-        Required(CONF_HOST, description="扫地机 IP 地址，如 192.168.x.x"): str,
+        Required(CONF_HOST, default="192.168.0.179"): str,
         Optional(CONF_PORT, default=DEFAULT_PORT): int,
         Optional(CONF_USERNAME, default=DEFAULT_USERNAME): str,
         Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
-        Required(CONF_DEVICE_ID, description="设备唯一 ID（局域网 MQTT topic 中使用）"): str,
+        Required(CONF_DEVICE_ID, default="f5dae307-b7ea-06a9-e10b-41ac24435030"): str,
     }
 )
 

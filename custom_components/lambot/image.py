@@ -1,4 +1,4 @@
-﻿"""Lambot 扫地机 SLAM 地图图像实体。"""
+"""Lambot 扫地机 SLAM 地图图像实体。"""
 from __future__ import annotations
 
 import logging

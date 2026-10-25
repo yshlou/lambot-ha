@@ -1,10 +1,11 @@
 {
   "domain": "lambot",
   "name": "Lambot 岚豹扫地机",
+  "codeowners": ["@teleagent"],
   "config_flow": true,
   "dependencies": [],
+  "documentation": "https://www.lambot.ai",
   "iot_class": "local_polling",
   "requirements": ["paho-mqtt>=1.6.0"],
-  "version": "3.3.0",
-  "issue_tracker": "https://github.com/yshlou/lambot-ha/issues"
+  "version": "2.0.0"
 }
